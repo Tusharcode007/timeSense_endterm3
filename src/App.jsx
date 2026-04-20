@@ -5,7 +5,8 @@ import { TimerProvider } from './context/TimerContext';
 import { ScheduleProvider } from './context/ScheduleContext';
 import { AnalyticsProvider } from './context/AnalyticsContext';
 import { AuthProvider } from './context/AuthContext';
-import AuthGuard from './components/ProjectManagement/layout/AuthGuard';
+import ProtectedRoute from './components/ProjectManagement/layout/ProtectedRoute';
+import DashboardLayout from './components/ProjectManagement/layout/DashboardLayout';
 
 function App() {
   return (
@@ -16,7 +17,9 @@ function App() {
             <SubtaskProvider>
               <ScheduleProvider>
                 <AnalyticsProvider>
-                  <AuthGuard />
+                  <ProtectedRoute>
+                      <DashboardLayout />
+                  </ProtectedRoute>
                 </AnalyticsProvider>
               </ScheduleProvider>
             </SubtaskProvider>

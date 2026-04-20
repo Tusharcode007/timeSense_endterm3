@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db } from '../services/firebase';
 import { useProjects } from './ProjectContext';
 
 const TaskContext = createContext();

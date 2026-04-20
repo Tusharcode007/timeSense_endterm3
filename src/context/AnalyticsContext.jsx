@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, useContext, useMemo } from 'react';
 import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db } from '../services/firebase';
 import { useProjects } from './ProjectContext';
 import { useAuth } from './AuthContext';
 import { generateInsights } from '../utils/productivityEngine';

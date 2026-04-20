@@ -1,6 +1,7 @@
-import React, { createContext, useState, useEffect, useContext, useMemo } from 'react';
+import React, { createContext, useState, useEffect, useContext, useMemo, useCallback } from 'react';
 import { useTasks } from './TaskContext';
 import { useAuth } from './AuthContext';
+import { fetchGoogleEvents } from '../services/calendar';
 
 const ScheduleContext = createContext();
 
@@ -13,48 +14,37 @@ export const ScheduleProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [authorized, setAuthorized] = useState(false); 
 
-  // 1. LIVE: Fetch Google Calendar Events via OAuth Token
-  const fetchGoogleCalendarEvents = async () => {
-    if (!user.calendarToken) {
-       console.warn("No Calendar OAuth token available.");
-       return;
-    }
+  // 1. LIVE: Fetch Google Calendar Events via external service
+  const fetchGoogleCalendarEvents = useCallback(async () => {
+    if (!user?.calendarToken) return;
     
     setLoading(true);
     try {
-        const timeMin = new Date().toISOString();
-        const futureDate = new Date();
-        futureDate.setDate(futureDate.getDate() + 7);
-        const timeMax = futureDate.toISOString();
-
-        const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime`, {
-            headers: {
-                Authorization: `Bearer ${user.calendarToken}`
-            }
-        });
-
-        if (!response.ok) throw new Error("Failed to fetch calendar events");
-        
-        const data = await response.json();
-        setCalendarEvents(data.items || []);
+        const events = await fetchGoogleEvents(user.calendarToken);
+        setCalendarEvents(events);
         setAuthorized(true);
-
     } catch (error) {
-        console.error("Calendar Sync Error:", error);
+        console.error("Schedule Context Calendar Sync Error:", error);
     } finally {
         setLoading(false);
     }
-  };
+  }, [user?.calendarToken]);
 
-  // Automatically fetch if user logs in securely
+  // Automatically fetch if user logs in securely and map 5 min interval background polling
   useEffect(() => {
-     if (isAuthenticated && user.calendarToken) {
+     if (isAuthenticated && user?.calendarToken) {
          fetchGoogleCalendarEvents();
+         
+         const interval = setInterval(() => {
+             fetchGoogleCalendarEvents();
+         }, 300000); // 5 minutes
+         
+         return () => clearInterval(interval);
      } else {
          setCalendarEvents([]);
          setAuthorized(false);
      }
-  }, [isAuthenticated, user.calendarToken]);
+  }, [isAuthenticated, user?.calendarToken, fetchGoogleCalendarEvents]);
 
   // 2. Data Normalization & Merge
   const unifiedSchedule = useMemo(() => {
@@ -78,16 +68,12 @@ export const ScheduleProvider = ({ children }) => {
          };
       });
 
-    // Normalize Calendar Events
+    // Normalize Calendar Events (Already normalized inside the API layer structure!)
+    // We just map the objects over securely
     const mappedEvents = calendarEvents.map(e => {
-       const startD = new Date(e.start.dateTime || e.start.date);
-       const endD = new Date(e.end.dateTime || e.end.date);
        return {
-         id: e.id,
-         type: 'event',
-         title: e.summary,
-         startObj: startD,
-         durationMinutes: Math.round((endD - startD) / 60000),
+         ...e, // Contains { id, title, startTime, endTime, type, isExternal, durationMinutes }
+         startObj: e.startTime, // Mapping back for merge compatibility
          raw: e
        };
     });

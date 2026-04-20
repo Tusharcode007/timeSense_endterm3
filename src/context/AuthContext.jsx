@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { auth } from '../firebaseConfig';
-import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from '../services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { loginWithGoogleService, logoutService, signUpWithEmailService, loginWithEmailService } from '../services/auth';
 
 const AuthContext = createContext();
 
@@ -42,35 +43,60 @@ export const AuthProvider = ({ children }) => {
 
   const loginWithGoogle = async () => {
      try {
-         const provider = new GoogleAuthProvider();
-         // Explicitly request calendar scopes to generate a usable access token
-         provider.addScope('https://www.googleapis.com/auth/calendar.readonly');
-         
-         const result = await signInWithPopup(auth, provider);
-         
-         // Extract the Google Access Token securely
-         const credential = GoogleAuthProvider.credentialFromResult(result);
-         const token = credential.accessToken;
-         const userPayload = result.user;
-
-         setUser({
+         const userPayload = await loginWithGoogleService();
+         setUser(prev => ({
+             ...prev,
              id: userPayload.uid,
              email: userPayload.email,
              displayName: userPayload.displayName,
              photoURL: userPayload.photoURL,
-             plan: 'free',
              isAuthenticated: true,
-             calendarToken: token
-         });
+             calendarToken: userPayload.calendarToken
+         }));
          return true;
      } catch (error) {
-         console.error("Google SSO Failure:", error);
-         return false;
+         throw error;
      }
   };
 
+  const signUpWithEmail = async (email, password, displayName) => {
+      try {
+          const userPayload = await signUpWithEmailService(email, password, displayName);
+          setUser(prev => ({
+              ...prev,
+              id: userPayload.uid,
+              email: userPayload.email,
+              displayName: userPayload.displayName,
+              photoURL: userPayload.photoURL,
+              isAuthenticated: true,
+              calendarToken: null
+          }));
+          return true;
+      } catch (error) {
+          throw error;
+      }
+  };
+
+  const loginWithEmail = async (email, password) => {
+      try {
+          const userPayload = await loginWithEmailService(email, password);
+          setUser(prev => ({
+              ...prev,
+              id: userPayload.uid,
+              email: userPayload.email,
+              displayName: userPayload.displayName,
+              photoURL: userPayload.photoURL,
+              isAuthenticated: true,
+              calendarToken: null
+          }));
+          return true;
+      } catch (error) {
+          throw error;
+      }
+  };
+
   const logout = async () => {
-      await signOut(auth);
+      await logoutService();
       setUser({ id: null, email: null, displayName: null, photoURL: null, plan: 'free', isAuthenticated: false, calendarToken: null });
   };
 
@@ -83,6 +109,8 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated: user.isAuthenticated, 
       authLoading,
       loginWithGoogle, 
+      loginWithEmail,
+      signUpWithEmail,
       logout,
       upgradeToPremium 
     }}>

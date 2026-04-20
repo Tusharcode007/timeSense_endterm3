@@ -1,15 +1,20 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../services/firebase';
 
 const USER_ID = 'demo_user'; // hardcoded config for offline compat
 
 export const usePomodoro = () => {
   // Localized decoupled state just for UI renders
-  const [activeSession, setActiveSession] = useState(null); 
-  // { taskId, taskName, startTimeString, isPaused, accumulatedSeconds }
+  const [activeSession, setActiveSession] = useState(() => {
+     const saved = localStorage.getItem('activePomodoro');
+     return saved ? JSON.parse(saved) : null;
+  }); 
   
-  const [displaySeconds, setDisplaySeconds] = useState(0);
+  const [displaySeconds, setDisplaySeconds] = useState(() => {
+     const saved = localStorage.getItem('activePomodoro');
+     return saved ? JSON.parse(saved).elapsed || 0 : 0;
+  });
 
   // Background non-rendering refs
   const intervalRef = useRef(null);
@@ -26,12 +31,15 @@ export const usePomodoro = () => {
 
   // 2. Start
   const startTimer = useCallback((taskId, taskName) => {
-    setActiveSession({
+    const sessionState = {
       taskId,
       taskName,
       startTimeString: new Date().toISOString(),
-      isPaused: false
-    });
+      isPaused: false,
+      elapsed: 0
+    };
+    setActiveSession(sessionState);
+    localStorage.setItem('activePomodoro', JSON.stringify(sessionState));
     
     startTimeRef.current = Date.now();
     accumulatedTimeRef.current = 0;
@@ -55,7 +63,12 @@ export const usePomodoro = () => {
         startTimeRef.current = null;
     }
     
-    setActiveSession(prev => prev ? { ...prev, isPaused: true } : null);
+    setActiveSession(prev => {
+        if (!prev) return null;
+        const out = { ...prev, isPaused: true, elapsed: accumulatedTimeRef.current };
+        localStorage.setItem('activePomodoro', JSON.stringify(out));
+        return out;
+    });
   }, []);
 
   // 4. Resume
@@ -63,7 +76,11 @@ export const usePomodoro = () => {
     if (!activeSession || !activeSession.isPaused) return;
     
     startTimeRef.current = Date.now();
-    setActiveSession(prev => ({ ...prev, isPaused: false }));
+    setActiveSession(prev => {
+        const out = { ...prev, isPaused: false };
+        localStorage.setItem('activePomodoro', JSON.stringify(out));
+        return out;
+    });
     
     intervalRef.current = setInterval(tick, 1000);
   }, [activeSession, tick]);
@@ -96,12 +113,13 @@ export const usePomodoro = () => {
        taskId: activeSession.taskId,
        startTime: activeSession.startTimeString,
        endTime: new Date().toISOString(),
-       durationMinutes: Math.ceil(totalSeconds / 60), // converting to mins for DB
+       durationMinutes: Math.ceil(totalSeconds / 60), 
        durationSecondsRaw: totalSeconds
     };
 
     setActiveSession(null);
     setDisplaySeconds(0);
+    localStorage.removeItem('activePomodoro');
 
     if (totalSeconds > 10) { // Only save if it was meaningful (>10s)
       try {
@@ -126,22 +144,8 @@ export const usePomodoro = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [activeSession, pauseTimer]);
 
-  // 7. Auto-save on unmount/reload
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-       if (activeSession) {
-          // If we had a real backend, we'd use navigator.sendBeacon here.
-          // Since it's firebase, async writes during unload are volatile, 
-          // standard practice is relying on pause-syncs or periodic localstorage dumps.
-          localStorage.setItem('orphaned_pomodoro', JSON.stringify({
-             ...activeSession,
-             elapsed: accumulatedTimeRef.current
-          }));
-       }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [activeSession]);
+  // 7. Auto-save on unmount/reload is heavily handled by state calls now.
+  // We can strip the orphaned_pomodoro listener as state locks are rigid.
 
   // Format Helper HH:MM:SS
   const formatTime = (totalSecs) => {
